@@ -80,6 +80,7 @@ def run(
         half=False,  # use FP16 half-precision inference
         dnn=False,  # use OpenCV DNN for ONNX inference
         vid_stride=1,  # video frame-rate stride
+        
 ):
     source = str(source)
     save_img = not nosave and not source.endswith('.txt')  # save inference images
@@ -135,6 +136,7 @@ def run(
         # Second-stage classifier (optional)
         # pred = utils.general.apply_classifier(pred, classifier_model, im, im0s)
 
+        class_counts = {}
         # Process predictions
         for i, det in enumerate(pred):  # per image
             seen += 1
@@ -155,10 +157,37 @@ def run(
                 # Rescale boxes from img_size to im0 size
                 det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], im0.shape).round()
 
+
+                # Count objects by class
+                for *xyxy, conf, cls in reversed(det):
+                    c = int(cls)  # integer class
+                    label = None if hide_labels else (names[c] if hide_conf else f'{names[c]} {conf:.2f}')
+                    annotator.box_label(xyxy, label, color=colors(c, True))
+                    
+                    # Draw object count near the bounding box
+                    class_name = names[c]
+                    if class_name not in class_counts:
+                        class_counts[class_name] = 1
+                    else:
+                         class_counts[class_name] += 1
+                    count_text = f'{class_counts[class_name]} {class_name}(s)'
+                    text_size = cv2.getTextSize(count_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)[0]
+                    text_x = int(xyxy[2]) + 10  # Adjust the X-coordinate to the right of the bounding box
+                    text_y = int(xyxy[1]) + 5  # Adjust the Y-coordinate to align with the top of the bounding box
+                    cv2.putText(im0, str(label), (int(xyxy[0]), int(xyxy[1]) - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+
+
+            # Print object counts
+            for class_name, count in class_counts.items():
+                print(f'{class_name}: {count}')
+                
+
                 # Print results
                 for c in det[:, 5].unique():
                     n = (det[:, 5] == c).sum()  # detections per class
                     s += f"{n} {names[int(c)]}{'s' * (n > 1)}, "  # add to string
+
+                   
 
                 # Write results
                 for *xyxy, conf, cls in reversed(det):
@@ -188,7 +217,17 @@ def run(
             # Save results (image with detections)
             if save_img:
                 if dataset.mode == 'image':
-                    cv2.imwrite(save_path, im0)
+                    # Add class count to the image
+                     text_y_offset = 30
+                     for class_name, count in class_counts.items():
+                         text = f'Class {class_name}: {count} objects'
+                         text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)[0]
+                         text_y = text_y_offset
+                         cv2.putText(im0, text, (10, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+                         text_y_offset += text_size[1] + 10  # Adicione algum espaçamento entre os textos de contagem de classe
+
+                    # Save the modified image
+                     cv2.imwrite(save_path, im0)
                 else:  # 'video' or 'stream'
                     if vid_path[i] != save_path:  # new video
                         vid_path[i] = save_path
@@ -202,7 +241,16 @@ def run(
                             fps, w, h = 30, im0.shape[1], im0.shape[0]
                         save_path = str(Path(save_path).with_suffix('.mp4'))  # force *.mp4 suffix on results videos
                         vid_writer[i] = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
-                    vid_writer[i].write(im0)
+                      
+                    for class_name, count in class_counts.items():
+                      text = f'{class_name}: {count} objects'
+                      text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 2, 1)[0]
+                      text_x = 10  # Adjust X-coordinate as needed
+                      text_y = 30  # Adjust Y-coordinate as needed
+                      cv2.putText(im0, text, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+                        
+                      # Save the modified frame
+                      vid_writer[i].write(im0)
 
         # Print time (inference-only)
         LOGGER.info(f"{s}{'' if len(det) else '(no detections), '}{dt[1].dt * 1E3:.1f}ms")
