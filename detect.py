@@ -1,6 +1,5 @@
-# YOLOv5 🚀 by Ultralytics, AGPL-3.0 license
+# 
 """
-Run YOLOv5 detection inference on images, videos, directories, globs, YouTube, webcam, streams, etc.
 
 Usage - sources:
     $ python detect.py --weights yolov5s.pt --source 0                               # webcam
@@ -28,12 +27,13 @@ Usage - formats:
                                  yolov5s_paddle_model       # PaddlePaddle
 """
 
+from flask import render_template
+import tensorflow as tf
 import argparse
 import os
 import platform
 import sys
 from pathlib import Path
-
 import torch
 
 FILE = Path(__file__).resolve()
@@ -54,10 +54,10 @@ from utils.torch_utils import select_device, smart_inference_mode
 @smart_inference_mode()
 def run(
         weights=ROOT / 'yolov5s.pt',  # model path or triton URL
-        source=ROOT / 'data/images',  # file/dir/URL/glob/screen/0(webcam)
-        data=ROOT / 'data/coco128.yaml',  # dataset.yaml path
+        source=ROOT / 'data/imagens',  # file/dir/URL/glob/screen/0(webcam)
+        data=ROOT / 'data/custom.yaml',  # dataset.yaml path
         imgsz=(640, 640),  # inference size (height, width)
-        conf_thres=0.25,  # confidence threshold
+        conf_thres=0.6,  # confidence threshold
         iou_thres=0.45,  # NMS IOU threshold
         max_det=1000,  # maximum detections per image
         device='',  # cuda device, i.e. 0 or 0,1,2,3 or cpu
@@ -92,8 +92,10 @@ def run(
         source = check_file(source)  # download
 
     # Directories
-    save_dir = increment_path(Path(project) / name, exist_ok=exist_ok)  # increment run
-    (save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
+    save_dir = Path("/myproject/static") 
+    #save_dir = increment_path(Path(project) / name, exist_ok=exist_ok)  # increment run
+    #(save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
+
 
     # Load model
     device = select_device(device)
@@ -116,13 +118,14 @@ def run(
     # Run inference
     model.warmup(imgsz=(1 if pt or model.triton else bs, 3, *imgsz))  # warmup
     seen, windows, dt = 0, [], (Profile(), Profile(), Profile())
+
     for path, im, im0s, vid_cap, s in dataset:
         with dt[0]:
             im = torch.from_numpy(im).to(model.device)
-            im = im.half() if model.fp16 else im.float()  # uint8 to fp16/32
-            im /= 255  # 0 - 255 to 0.0 - 1.0
+            im = im.half() if model.fp16 else im.float()  
+            im /= 255 
             if len(im.shape) == 3:
-                im = im[None]  # expand for batch dim
+                im = im[None]  
 
         # Inference
         with dt[1]:
@@ -136,50 +139,52 @@ def run(
         # Second-stage classifier (optional)
         # pred = utils.general.apply_classifier(pred, classifier_model, im, im0s)
 
+
         class_counts = {}
+
+
         # Process predictions
         for i, det in enumerate(pred):  # per image
             seen += 1
-            if webcam:  # batch_size >= 1
+            if webcam:  
                 p, im0, frame = path[i], im0s[i].copy(), dataset.count
                 s += f'{i}: '
             else:
                 p, im0, frame = path, im0s.copy(), getattr(dataset, 'frame', 0)
 
             p = Path(p)  # to Path
-            save_path = str(save_dir / p.name)  # im.jpg
-            txt_path = str(save_dir / 'labels' / p.stem) + ('' if dataset.mode == 'image' else f'_{frame}')  # im.txt
-            s += '%gx%g ' % im.shape[2:]  # print string
-            gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
-            imc = im0.copy() if save_crop else im0  # for save_crop
+            save_path = str(save_dir / p.name) 
+            txt_path = str(save_dir / 'labels' / p.stem) + ('' if dataset.mode == 'image' else f'_{frame}')  
+            s += '%gx%g ' % im.shape[2:]  
+            gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  
+            imc = im0.copy() if save_crop else im0 
             annotator = Annotator(im0, line_width=line_thickness, example=str(names))
             if len(det):
                 # Rescale boxes from img_size to im0 size
                 det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], im0.shape).round()
 
 
-                # Count objects by class
+                # Count objects 
                 for *xyxy, conf, cls in reversed(det):
-                    c = int(cls)  # integer class
+                    c = int(cls)  
                     label = None if hide_labels else (names[c] if hide_conf else f'{names[c]} {conf:.2f}')
                     annotator.box_label(xyxy, label, color=colors(c, True))
-                    
-                    # Draw object count near the bounding box
+
                     class_name = names[c]
                     if class_name not in class_counts:
                         class_counts[class_name] = 1
                     else:
-                         class_counts[class_name] += 1
-                    count_text = f'{class_counts[class_name]} {class_name}(s)'
-                    text_size = cv2.getTextSize(count_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)[0]
-                    text_x = int(xyxy[2]) + 10  # Adjust the X-coordinate to the right of the bounding box
-                    text_y = int(xyxy[1]) + 5  # Adjust the Y-coordinate to align with the top of the bounding box
-                    cv2.putText(im0, str(label), (int(xyxy[0]), int(xyxy[1]) - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+                        class_counts[class_name] += 1
+
+                        
+                   # count_text = f'{class_counts[class_name]} {class_name}(s)'
+                    #text_size = cv2.getTextSize(count_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)[0]
+                    #text_x = int(xyxy[2]) + 10  # Adjust the X-coordinate to the right of the bounding box
+                    #text_y = int(xyxy[1]) + 5  # Adjust the Y-coordinate to align with the top of the bounding box
+                    #cv2.putText(im0, str(label), (int(xyxy[0]), int(xyxy[1]) - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
 
 
-            # Print object counts
-            for class_name, count in class_counts.items():
-                print(f'{class_name}: {count}')
+            
                 
 
                 # Print results
@@ -218,13 +223,13 @@ def run(
             if save_img:
                 if dataset.mode == 'image':
                     # Add class count to the image
-                     text_y_offset = 30
-                     for class_name, count in class_counts.items():
-                         text = f'Class {class_name}: {count} objects'
-                         text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)[0]
-                         text_y = text_y_offset
-                         cv2.putText(im0, text, (10, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
-                         text_y_offset += text_size[1] + 10  # Adicione algum espaçamento entre os textos de contagem de classe
+                    # text_y_offset = 30
+                     #for class_name, count in class_counts.items():
+                      #   text = f'Class {class_name}: {count} objects'
+                       #  text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)[0]
+                        # text_y = text_y_offset
+                         #cv2.putText(im0, text, (10, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+                         #text_y_offset += text_size[1] + 10  # Adicione algum espaçamento entre os textos de contagem de classe
 
                     # Save the modified image
                      cv2.imwrite(save_path, im0)
@@ -252,17 +257,27 @@ def run(
                       # Save the modified frame
                       vid_writer[i].write(im0)
 
+       
+
         # Print time (inference-only)
         LOGGER.info(f"{s}{'' if len(det) else '(no detections), '}{dt[1].dt * 1E3:.1f}ms")
 
+    # Print object counts
+    for class_name, count in class_counts.items():
+        print(f'{class_name}: {count}')
+  
     # Print results
     t = tuple(x.t / seen * 1E3 for x in dt)  # speeds per image
     LOGGER.info(f'Speed: %.1fms pre-process, %.1fms inference, %.1fms NMS per image at shape {(1, 3, *imgsz)}' % t)
     if save_txt or save_img:
         s = f"\n{len(list(save_dir.glob('labels/*.txt')))} labels saved to {save_dir / 'labels'}" if save_txt else ''
         LOGGER.info(f"Results saved to {colorstr('bold', save_dir)}{s}")
+        
     if update:
         strip_optimizer(weights[0])  # update model (to fix SourceChangeWarning)
+
+
+
 
 
 def parse_opt():

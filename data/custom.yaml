@@ -1,0 +1,13 @@
+
+train: /myproject/yolov5/data/imagens/train  # train images 
+val: /myproject/yolov5/data/imagens/val  # validation images 
+test: /myproject/yolov5/data/data/imagens/test # test images 
+
+# Classes
+names:
+  0: Orange
+  1: Lime
+  2: Guava
+  3: Pomegranate
+  4: apple
+  5: banana
